@@ -5,6 +5,8 @@ This repository contains the complete ecosystem for testing and deploying the **
 1. **`mock-gke-env/`**: The target infrastructure. A Terraform module that provisions a private GKE cluster populated with diverse workloads (Deployments, StatefulSets, DaemonSets, etc.).
 2. **`gke-upgrade-risk-agent/`**: The AI Agent. An ADK-based multi-agent system deployed to Cloud Run that securely connects to the private GKE cluster, analyzes running workloads, and cross-references them against Kubernetes Release Notes to evaluate upgrade risks.
 
+![GKE Upguard in Action](https://github.com/user-attachments/assets/de16d4d9-3eec-4bd0-85ee-bb762ddd59a2)
+
 ---
 
 ## 🏗️ Architecture
