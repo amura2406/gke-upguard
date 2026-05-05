@@ -7,12 +7,17 @@ authors = [
 ]
 dependencies = [
     "google-adk>=1.15.0,<2.0.0",
-    "opentelemetry-instrumentation-google-genai>=0.1.0,<1.0.0",
+    "opentelemetry-instrumentation-google-genai==0.7b0",
     "gcsfs>=2024.11.0",
     "google-cloud-logging>=3.12.0,<4.0.0",
-    "google-cloud-aiplatform[evaluation,agent-engines]>=1.130.0",
-    "protobuf>=6.31.1,<7.0.0",
+    "google-cloud-aiplatform[agent-engines,evaluation]>=1.130.0",
     "kubernetes>=35.0.0",
+    "google-cloud-container>=2.35.0",
+    "asyncpg>=0.30.0,<1.0.0",
+    "fastapi>=0.115.8,<1.0.0",
+    "uvicorn~=0.34.0",
+    "anyio>=4.13.0,<5.0.0",
+    "requests==2.33.1",
 ]
 requires-python = ">=3.11,<3.14"
 
@@ -106,9 +111,9 @@ acli_version = "0.1.2"
 
 [tool.agents-cli.create_params]
 # Parameters used during project creation
-deployment_target = "agent_runtime"
+deployment_target = "cloud_run"
 session_type = "none"
-cicd_runner = "skip"
+cicd_runner = "github_actions"
 include_data_ingestion = false
 
 datastore = "none"

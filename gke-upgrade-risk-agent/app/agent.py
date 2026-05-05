@@ -13,149 +13,82 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import datetime
-from zoneinfo import ZoneInfo
-
-from google.adk.agents import Agent
+import os
+import google.auth
+from google.adk.agents import Agent, SequentialAgent
 from google.adk.apps import App
 from google.adk.models import Gemini
 from google.genai import types
 
-import os
-import google.auth
-import json
-
-
+from app.tools import discover_gke_clusters, get_cluster_workloads, fetch_changelogs
 
 _, project_id = google.auth.default()
-os.environ["GOOGLE_CLOUD_PROJECT"] = project_id
+os.environ["GOOGLE_CLOUD_PROJECT"] = project_id if project_id else "mock-project"
 os.environ["GOOGLE_CLOUD_LOCATION"] = "global"
 os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "True"
 
 
-def get_cluster_specs() -> str:
-    """Fetches the current cluster version and running pods specs.
-    Returns a JSON string with the data.
-    """
-    from kubernetes import client, config
-    try:
-        config.load_kube_config()
-        v1 = client.CoreV1Api()
-        version_api = client.VersionApi()
-        
-        cluster_version = version_api.get_code().git_version
-        
-        pods = v1.list_pod_for_all_namespaces()
-        pod_specs = []
-        for pod in pods.items:
-            pod_specs.append({
-                "name": pod.metadata.name,
-                "namespace": pod.metadata.namespace,
-                "images": [c.image for c in pod.spec.containers]
-            })
-            
-        return json.dumps({
-            "cluster_version": cluster_version,
-            "pods": pod_specs
-        })
-    except Exception as e:
-        # Fallback to mock data with a warning
-        return json.dumps({
-            "warning": f"Failed to fetch real cluster data: {e}. Using mock data for simulation.",
-            "cluster_version": "1.27.3-gke.100",
-            "pods": [
-                {"name": "nginx-pod", "namespace": "default", "images": ["nginx:1.21"]},
-                {"name": "legacy-app", "namespace": "prod", "images": ["custom-app:v1"]},
-                {"name": "deprecated-api-user", "namespace": "dev", "images": ["my-app:latest"]}
-            ]
-        })
-
-
-def fetch_changelogs(target_version: str) -> str:
-    """Fetches changelogs for the target GKE version from Kubernetes GitHub repo
-    and extracts breaking changes and deprecations using Gemini.
-    """
-    import requests
-    from google import genai
-    
-    try:
-        # Extract major.minor version, e.g., "1.28" from "1.28.3"
-        parts = target_version.split('.')
-        if len(parts) >= 2:
-            version_prefix = f"{parts[0]}.{parts[1]}"
-        else:
-            version_prefix = target_version
-            
-        url = f"https://raw.githubusercontent.com/kubernetes/kubernetes/master/CHANGELOG/CHANGELOG-{version_prefix}.md"
-        
-        response = requests.get(url)
-        if response.status_code != 200:
-            return f"Failed to fetch changelog from {url}. Status code: {response.status_code}"
-            
-        content = response.text
-        
-        # Find the start of v{version_prefix}.0 section
-        header = f"# v{version_prefix}.0"
-        start_idx = content.find(header)
-        if start_idx == -1:
-            header = f"# {version_prefix}.0"
-            start_idx = content.find(header)
-            
-        if start_idx != -1:
-            next_header_idx = content.find("# ", start_idx + len(header))
-            if next_header_idx != -1:
-                relevant_content = content[start_idx:next_header_idx]
-            else:
-                relevant_content = content[start_idx:]
-        else:
-             relevant_content = content[:50000]
-             
-        client = genai.Client()
-        
-        prompt = f"""
-        You are an expert Kubernetes operator.
-        Analyze the attached release notes for Kubernetes {version_prefix} and extract:
-        1. **Deprecations**: Any APIs or features that are deprecated in this release.
-        2. **Breaking Changes/Removals**: Any APIs or features that are removed or have breaking changes in this release.
-        3. **Action Required**: Any specific actions operators need to take before or after upgrade.
-        
-        Be concise and focus on things that might break running applications.
-        """
-        
-        model_name = "gemini-3.1-pro-preview" 
-        
-        llm_response = client.models.generate_content(
-            model=model_name,
-            contents=[prompt, content],
-        )
-        
-        return f"Extracted Upgrade Risks for {version_prefix} from GitHub:\n{llm_response.text}"
-        
-    except Exception as e:
-        return f"Error fetching or processing changelogs: {e}"
-
-
-
-
-
-root_agent = Agent(
-    name="root_agent",
-    model=Gemini(
-        model="gemini-3.1-pro-preview",
-        retry_options=types.HttpRetryOptions(attempts=3),
-    ),
-    instruction="""You are a GKE Upgrade Risk Assessment Agent.
-Your goal is to analyze the impact of a GKE upgrade on existing running pods.
-You will receive an UpgradeAvailableEvent notification (or details about a target version).
-You must:
-1. Fetch the current cluster version and running pods specs using `get_cluster_specs`.
-2. Fetch the changelogs for the target version using `fetch_changelogs`.
-3. Analyze the changelogs for potential breaking changes or removed APIs that might affect the running pods (based on their images or configuration if available).
-4. Generate a comprehensive risk assessment report in Markdown format.
+def create_discovery_agent():
+    return Agent(
+        name="discovery_agent",
+        model=Gemini(
+            model="gemini-3.1-pro-preview",
+            retry_options=types.HttpRetryOptions(attempts=3),
+        ),
+        instruction="""You are a Kubernetes Infrastructure Discovery Agent.
+Your goal is to discover all GKE clusters in the GCP project and fetch their running workloads (Deployments, StatefulSets, DaemonSets, CronJobs, and Pods).
+You will receive a request with a target version to upgrade to.
+1. Use `discover_gke_clusters` to find all clusters.
+2. For each cluster found, use `get_cluster_workloads(cluster_name, location)` to fetch its workloads.
+Compile this information into a structured summary of the infrastructure.
+Make sure to pass the target version string clearly to the next agent in your output.
 """,
-    tools=[get_cluster_specs, fetch_changelogs],
-)
+        output_key="infrastructure_state",
+        tools=[discover_gke_clusters, get_cluster_workloads],
+    )
 
+
+def create_changelog_agent():
+    return Agent(
+        name="changelog_agent",
+        model=Gemini(
+            model="gemini-3.1-pro-preview",
+            retry_options=types.HttpRetryOptions(attempts=3),
+        ),
+        instruction="""You are a Kubernetes Release Analyzer Agent.
+Your input includes the target version for a GKE upgrade (e.g., from the user's initial prompt or passed along by the discovery agent).
+Extract the target version and use the `fetch_changelogs(target_version)` tool to get the breaking changes and deprecations for that version.
+Output the extracted risk factors and the target version clearly.
+""",
+        output_key="upgrade_risks",
+        tools=[fetch_changelogs],
+    )
+
+
+def create_assessment_agent():
+    return Agent(
+        name="assessment_agent",
+        model=Gemini(
+            model="gemini-3.1-pro-preview",
+            retry_options=types.HttpRetryOptions(attempts=3),
+        ),
+        instruction="""You are a GKE Upgrade Risk Assessment Coordinator.
+You receive the discovered infrastructure state from `discovery_agent` (available in the history, and in {infrastructure_state}) and the upgrade risks from `changelog_agent` (available in the history, and in {upgrade_risks}).
+Compare the running workloads (images, resource types) against the breaking changes and deprecations.
+Generate a final, comprehensive Markdown report detailing the potential risks of the upgrade for the specific clusters and workloads discovered.
+Be specific about which workloads might be impacted by which breaking changes.
+""",
+    )
+
+
+root_agent = SequentialAgent(
+    name="root_agent",
+    sub_agents=[
+        create_discovery_agent(),
+        create_changelog_agent(),
+        create_assessment_agent(),
+    ],
+)
 
 app = App(
     root_agent=root_agent,

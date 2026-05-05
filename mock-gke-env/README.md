@@ -1,14 +1,18 @@
-# Mock GKE Environment for Upgrade Simulation
+# mock-gke-env: Mock Environment for Upgrade Simulation
 
-This directory contains a Terraform configuration to deploy a test GKE cluster with diverse workloads to simulate a GKE environment for upgrades.
+This directory contains a Terraform configuration to deploy a test GKE cluster with diverse workloads. It acts as the "target" environment for the `gke-upgrade-risk-agent` to analyze.
 
-## Prerequisites
+## 🏗️ What is Deployed?
 
-- Terraform installed.
-- `gcloud` CLI installed and authenticated.
-- Active GCP project selected.
+1. **Private VPC & Subnetworks:** A dedicated network structure for the cluster.
+2. **Private GKE Cluster:** A 2-node GKE cluster where the Kubernetes API is private (`enable_private_endpoint = false` for local kubectl access, but worker nodes are private).
+3. **Simulated Workloads:**
+   - Stateless `nginx` Deployment
+   - Stateful `redis` StatefulSet
+   - A mock `logger` DaemonSet
+   - Legacy `java8` and `java11` Deployments 
 
-## 1-Click Deployment
+## 🚀 1-Click Deployment
 
 Run the following commands from this directory:
 
@@ -17,18 +21,25 @@ terraform init
 terraform apply
 ```
 
-Terraform will automatically use the project ID `anggar-gke-upgrade-risk-agent` as detected during setup.
+Terraform will automatically use your default GCP project. It will output important variables (like the VPC Network Name) that the `gke-upgrade-risk-agent` relies on for VPC Direct Egress.
 
-## Verifying Workloads
+## 🔑 Crucial: RBAC Configuration
 
-Once the deployment is complete, you can verify the workloads are running by getting credentials for the cluster and listing pods:
+Once the cluster is up, the `gke-upgrade-risk-agent` (running in Cloud Run) needs explicit permission to read the workloads *inside* the cluster.
+
+After deploying this cluster AND deploying the Agent, run the following:
 
 ```bash
+# 1. Authenticate your local kubectl to the new cluster
 gcloud container clusters get-credentials mock-upgrade-cluster --zone us-central1-a
-kubectl get pods -n mock-env
+
+# 2. Grant the Cloud Run service account 'view' permissions
+kubectl create clusterrolebinding agent-viewer \
+  --clusterrole=view \
+  --user="$(gcloud config get-value project_number)-compute@developer.gserviceaccount.com"
 ```
 
-## Clean Up
+## 🧹 Clean Up
 
 To destroy the environment and avoid ongoing costs:
 

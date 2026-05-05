@@ -1,82 +1,71 @@
-# gke-upgrade-risk-agent
+# GKE Upgrade Risk Agent
 
-Simple ReAct agent
-Agent generated with `agents-cli` version `0.1.2`
+This directory contains the AI Agent responsible for discovering GKE clusters, inspecting their running workloads, and comparing them against Kubernetes Release Notes to evaluate upgrade risks.
 
-## Project Structure
+It is built using the Google ADK (Agent Development Kit) framework.
 
+## 🧠 Multi-Agent Architecture
+
+The application uses a `SequentialAgent` workflow to separate concerns and improve LLM reliability:
+
+```mermaid
+graph TD;
+    User[User Prompt] --> RootAgent[Root: Assessment Agent]
+    
+    subgraph "Agent Workflow"
+        RootAgent -->|1. Delegate| Discovery[Discovery Agent]
+        Discovery -->|Fetch Infrastructure| ClusterData[Cluster State]
+        
+        RootAgent -->|2. Delegate| Changelog[Changelog Agent]
+        Changelog -->|Extract Notes| RiskData[Breaking Changes]
+        
+        ClusterData --> RootAgent
+        RiskData --> RootAgent
+        RootAgent -->|3. Compare| Report[Final Markdown Report]
+    end
+    
+    subgraph "Tools"
+        Discovery -.-> Tool1[discover_gke_clusters]
+        Discovery -.-> Tool2[get_cluster_workloads]
+        Changelog -.-> Tool3[fetch_changelogs]
+    end
 ```
-gke-upgrade-risk-agent/
-├── app/         # Core agent code
-│   ├── agent.py               # Main agent logic
-│   ├── agent_runtime_app.py    # Agent Runtime application logic
-│   └── app_utils/             # App utilities and helpers
-├── tests/                     # Unit, integration, and load tests
-├── GEMINI.md                  # AI-assisted development guide
-└── pyproject.toml             # Project dependencies
+
+### 🔒 Dual-Environment Authentication
+The `get_cluster_workloads` tool is designed to work both locally and in production:
+- **Local (`agents-cli playground`)**: Uses your local `~/.kube/config` and proxies.
+- **Production (Cloud Run)**: Dynamically fetches the cluster CA and GCP OAuth tokens on the fly to instantiate a temporary, secure connection directly to the GKE Control Plane.
+
+## 🚀 Deployment (Cloud Run)
+
+This agent is configured to deploy to **Cloud Run**. Because it must scan private GKE clusters, the deployment requires specific networking configurations:
+
+1. **VPC Direct Egress**: The Cloud Run service `terraform` uses a remote state data block to read the VPC network details from `mock-gke-env`.
+2. **GCP IAM Permissions**: The Cloud Run service account is granted `roles/container.clusterViewer` to discover clusters.
+
+### Deployment Steps
+```bash
+# 1. Deploy the required Infrastructure (Storage, BQ, Secrets, IAM)
+agents-cli infra single-project
+
+# 2. Deploy the containerized Agent Code
+agents-cli deploy --region us-central1
 ```
 
-> 💡 **Tip:** Use [Gemini CLI](https://github.com/google-gemini/gemini-cli) for AI-assisted development - project context is pre-configured in `GEMINI.md`.
+## 📡 Remote Execution
+
+Once deployed, you do not need to run the playground locally. You can trigger the remote agent directly from your terminal:
+
+```bash
+agents-cli run \
+  --url "https://gke-upgrade-risk-agent-YOUR_PROJECT_ID_HASH.us-central1.run.app" \
+  --mode adk \
+  "What are the risks of upgrading the mock cluster to 1.30?"
+```
 
 ## Requirements
 
-Before you begin, ensure you have:
-- **uv**: Python package manager (used for all dependency management in this project) - [Install](https://docs.astral.sh/uv/getting-started/installation/) ([add packages](https://docs.astral.sh/uv/concepts/dependencies/) with `uv add <package>`)
-- **agents-cli**: Agents CLI - Install with `uv tool install google-agents-cli`
-- **Google Cloud SDK**: For GCP services - [Install](https://cloud.google.com/sdk/docs/install)
-
-
-## Quick Start
-
-Install required packages:
-
-```bash
-agents-cli install
-```
-
-Test the agent with a local web server:
-
-```bash
-agents-cli playground
-```
-
-You can also use features from the [ADK](https://adk.dev/) CLI with `uv run adk`.
-
-## Commands
-
-| Command              | Description                                                                                 |
-| -------------------- | ------------------------------------------------------------------------------------------- |
-| `agents-cli install` | Install dependencies using uv                                                         |
-| `agents-cli playground` | Launch local development environment                                                  |
-| `agents-cli lint`    | Run code quality checks                                                               |
-| `uv run pytest tests/unit tests/integration` | Run unit and integration tests                                                        |
-| `agents-cli deploy`  | Deploy agent to Agent Runtime                                                                |
-| `agents-cli publish gemini-enterprise` | Register deployed agent to Gemini Enterprise                    |
-
-## 🛠️ Project Management
-
-| Command | What It Does |
-|---------|--------------|
-| `agents-cli scaffold enhance` | Add CI/CD pipelines and Terraform infrastructure |
-| `agents-cli infra cicd` | One-command setup of entire CI/CD pipeline + infrastructure |
-| `agents-cli scaffold upgrade` | Auto-upgrade to latest version while preserving customizations |
-
----
-
-## Development
-
-Edit your agent logic in `app/agent.py` and test with `agents-cli playground` - it auto-reloads on save.
-
-## Deployment
-
-```bash
-gcloud config set project <your-project-id>
-agents-cli deploy
-```
-
-To add CI/CD and Terraform, run `agents-cli scaffold enhance`.
-To set up your production infrastructure, run `agents-cli infra cicd`.
-
-## Observability
-
-Built-in telemetry exports to Cloud Trace, BigQuery, and Cloud Logging.
+- **uv**: Python package manager
+- **agents-cli**: Google Agents CLI
+- **Google Cloud SDK**: For GCP services
+- **Terraform**: For infrastructure deployment
