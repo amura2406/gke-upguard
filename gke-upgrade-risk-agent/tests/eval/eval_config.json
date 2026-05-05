@@ -3,17 +3,33 @@
     "rubric_based_final_response_quality_v1": {
       "threshold": 0.8,
       "judgeModelOptions": {
-        "judgeModel": "gemini-flash-latest",
+        "judgeModel": "gemini-1.5-pro",
         "numSamples": 1
       },
       "rubrics": [
         {
-          "rubricId": "relevance",
-          "rubricContent": { "textProperty": "The response directly addresses the user's query." }
+          "rubricId": "infrastructure_accuracy",
+          "rubricContent": { 
+             "textProperty": "The response accurately identifies the discovered GKE clusters and the specific workloads running in them without hallucinating resources." 
+          }
         },
         {
-          "rubricId": "helpfulness",
-          "rubricContent": { "textProperty": "The response is helpful and provides useful information." }
+          "rubricId": "risk_completeness",
+          "rubricContent": { 
+             "textProperty": "The response successfully connects the target Kubernetes version's breaking changes and deprecations to the specific workloads running in the cluster." 
+          }
+        },
+        {
+          "rubricId": "actionability",
+          "rubricContent": { 
+             "textProperty": "The response provides clear, actionable guidance on what needs to be changed before the upgrade can proceed safely." 
+          }
+        },
+        {
+          "rubricId": "markdown_formatting",
+          "rubricContent": { 
+             "textProperty": "The response is formatted as a highly readable Markdown report, utilizing headers, lists, and code blocks appropriately." 
+          }
         }
       ]
     }

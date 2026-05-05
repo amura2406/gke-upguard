@@ -1,0 +1,73 @@
+{
+  "eval_set_id": "upgrade_risks",
+  "name": "GKE Upgrade Risk Evaluations",
+  "description": "Evaluates the agent's ability to discover clusters, fetch workloads, and accurately assess risk against Kubernetes release notes.",
+  "eval_cases": [
+    {
+      "eval_id": "explicit_upgrade_event",
+      "conversation": [
+        {
+          "user_content": {
+            "parts": [{"text": "I received a GKE Upgrade Notification (UpgradeAvailableEvent) for version 1.35.3-gke.1389000. Please check the risks."}]
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {"name": "discover_gke_clusters"},
+              {"name": "get_cluster_workloads"},
+              {"name": "fetch_changelogs"}
+            ]
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "app",
+        "user_id": "eval_user",
+        "state": {}
+      }
+    },
+    {
+      "eval_id": "vague_upgrade_query",
+      "conversation": [
+        {
+          "user_content": {
+            "parts": [{"text": "Should I upgrade to 1.30?"}]
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {"name": "discover_gke_clusters"},
+              {"name": "get_cluster_workloads"},
+              {"name": "fetch_changelogs"}
+            ]
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "app",
+        "user_id": "eval_user",
+        "state": {}
+      }
+    },
+    {
+      "eval_id": "specific_cluster_focus",
+      "conversation": [
+        {
+          "user_content": {
+            "parts": [{"text": "What breaks if I upgrade my 'mock-upgrade-cluster' to version 1.32?"}]
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {"name": "discover_gke_clusters"},
+              {"name": "get_cluster_workloads"},
+              {"name": "fetch_changelogs"}
+            ]
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "app",
+        "user_id": "eval_user",
+        "state": {}
+      }
+    }
+  ]
+}
